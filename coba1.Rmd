@@ -1,0 +1,89 @@
+---
+title: "asik"
+author: "Christian Sirait"
+date: "2023-07-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(rlang)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(cluster)  
+library(factoextra)
+
+data_raw=read_excel('RK 20 POLIS 2022 2023 VALUASI 31052023 rev.xlsx')
+ 
+data_raw
+```
+```{r}
+remove_empty <- data_raw%>% filter(!is.na(data_raw$NAMAKLINIK))
+remove_empty2 <- remove_empty %>% filter(remove_empty$JENISKELAMIN!='0')
+remove_colomn <- remove_empty2[,names(remove_empty2) %in% c("NAMAPERUSAHAAN","NAMAPESERTA","JENISKLAIM","TGLRAWAT","JENISKLAIM","KLAIM","BAYAR","TOLAK","JUMLAH KLAIM")]
+
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RI"]<- "Rawat Inap"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RJ"]<- "Rawat Jalan"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RM"]<- "Rawat Mata"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RL"]<- "Rawat Lahir"
+remove_colomn
+```
+
+
+
+```{r}
+test<-aggregate(remove_colomn$KLAIM,list(remove_colomn$NAMAPERUSAHAAN), FUN=sum)
+test2 <-aggregate(remove_colomn$`JUMLAH KLAIM`,list(remove_colomn$NAMAPERUSAHAAN), FUN=sum)
+data_fix<-test
+jumlah_klaim_summarize <- test2
+klaim_summarize <- data_fix
+klaim_summarize<-data.frame(klaim_summarize)
+jumlah_klaim_summarize<-data.frame(jumlah_klaim_summarize)
+cluster_testing<-merge(klaim_summarize,jumlah_klaim_summarize, by="Group.1")
+cluster_testing<-cluster_testing[,-1]
+colnames(cluster_testing) <- c('Sum Klaim','Jumlah Klaim')
+rownames(cluster_testing) <- c(data_fix$Group.1)
+cluster_testing
+
+```
+
+```{r}
+fviz_nbclust(cluster_testing, kmeans, method = "wss")
+```
+
+```{r}
+fviz_nbclust(cluster_testing, kmeans, method = "silhouette")
+```
+
+```{r}
+set.seed(123)
+gap_stat <- clusGap(cluster_testing, FUN = kmeans, nstart = 25,
+                    K.max = 10, B = 50) # metode gap statistic
+fviz_gap_stat(gap_stat)
+```
+
+
+```{r}
+final <- kmeans(cluster_testing, 3)
+print(final)
+```
+
+```{r}
+fviz_cluster(final, data = cluster_testing)
+```
+```{r}
+final$cluster
+```
+
+```{r}
+cluster_testing %>%
+  mutate(Cluster = final$cluster) %>%
+  group_by(Cluster) %>%
+  summarise_all("mean")
+```
+

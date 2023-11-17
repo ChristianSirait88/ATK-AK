@@ -1,0 +1,149 @@
+---
+title: "asik"
+author: "Christian Sirait"
+date: "2023-07-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(readxl)
+library(rlang)
+library(tidyverse)
+library(dplyr)
+library(plyr)
+library(cluster)  
+library(factoextra)
+library(ggplot2)
+library(plotly)
+library(anytime)    
+
+data_raw=read_excel('RK 20 POLIS 2022 2023 VALUASI 31052023 rev.xlsx')
+data_polis = read_excel('polis_random.xlsx')
+data_polis
+data_raw
+```
+```{r}
+remove_empty <- data_raw%>% filter(!is.na(data_raw$NAMAKLINIK))
+remove_empty2 <- remove_empty %>% filter(remove_empty$JENISKELAMIN!='0')
+remove_colomn <- remove_empty2[,names(remove_empty2) %in% c("NAMAPERUSAHAAN","NAMAPESERTA","JENISKLAIM","TGLRAWAT","TGL MULAI","JENISKLAIM","KLAIM","BAYAR","TOLAK","JUMLAH KLAIM")]
+data11<-remove_colomn$`TGL MULAI`
+years <- data.frame(data11)
+years <- years %>% mutate(data11 = ymd(data11))
+anydate(years$data11)
+years <- format(years,"%Y")
+remove_colomn <- remove_empty2[,names(remove_empty2) %in% c("NAMAPERUSAHAAN","NAMAPESERTA","JENISKLAIM","TGLRAWAT","JENISKLAIM","KLAIM","BAYAR","TOLAK","JUMLAH KLAIM")]
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RI"]<- "Rawat Inap"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RJ"]<- "Rawat Jalan"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RM"]<- "Rawat Mata"
+remove_colomn$JENISKLAIM[remove_colomn$JENISKLAIM =="RL"]<- "Rawat Lahir"
+colnames(years) <- c("Periode Awal Asuransi")
+remove_colomn<-cbind(remove_colomn,years)
+remove_colomn
+```
+
+
+```{r}
+polis <- data.frame(data_polis)
+polis
+```
+
+```{r}
+data_tahun_2022 <- remove_colomn[remove_colomn$`Periode Awal Asuransi`=='2022',]
+data_tahun_2023 <- remove_colomn[remove_colomn$`Periode Awal Asuransi`=='2023',]
+
+total_klaim_2022<-aggregate(data_tahun_2022$KLAIM,list(data_tahun_2022$NAMAPERUSAHAAN), FUN=sum)
+total_klaim_2023 <-aggregate(data_tahun_2023$KLAIM,list(data_tahun_2023$NAMAPERUSAHAAN), FUN=sum)
+ratio_2022 <- total_klaim_2022$x/polis
+ratio_2023 <- total_klaim_2023$x/polis
+cluster_testing_2022<-cbind(total_klaim_2022,polis,ratio_2022)
+cluster_testing_2023<-cbind(total_klaim_2023,polis,ratio_2023)
+cluster_testing_2022 <-cluster_testing_2022[,-1]
+cluster_testing_2023 <-cluster_testing_2023[,-1]
+colnames(cluster_testing_2022) <- c('Sum Klaim','Polis', 'Rasio Polis/Klaim')
+colnames(cluster_testing_2023) <- c('Sum Klaim','Polis', 'Rasio Polis/Klaim')
+rownames(cluster_testing_2022) <- c(total_klaim_2022$Group.1)
+rownames(cluster_testing_2023) <- c(total_klaim_2023$Group.1)
+
+cluster_testing_2022
+cluster_testing_2023
+
+```
+
+```{r}
+fviz_nbclust(cluster_testing_2022, kmeans, method = "wss")
+fviz_nbclust(cluster_testing_2023, kmeans, method = "wss")
+```
+
+```{r}
+fviz_nbclust(cluster_testing_2022, kmeans, method = "silhouette")
+fviz_nbclust(cluster_testing_2023, kmeans, method = "silhouette")
+```
+
+```{r}
+set.seed(123)
+gap_stat_2022 <- clusGap(cluster_testing_2022, FUN = kmeans,
+                    K.max = 10, B = 50) # metode gap statistic
+fviz_gap_stat(gap_stat_2022)
+
+gap_stat_2023 <- clusGap(cluster_testing_2023, FUN = kmeans,
+                    K.max = 10, B = 50) # metode gap statistic
+fviz_gap_stat(gap_stat_2023)
+
+```
+
+
+```{r}
+final_2022 <- kmeans(cluster_testing_2022, 2)
+print(final_2022)
+```
+```{r}
+final_2023 <- kmeans(cluster_testing_2023, 2)
+print(final_2023)
+```
+
+
+```{r}
+p<-cluster_testing_2022 %>%
+  ggplot(data = cluster_testing_2022, 
+             mapping = aes(x = cluster_testing_2022$`Sum Klaim`, 
+                                  y = cluster_testing_2022$`Rasio Polis/Klaim`, 
+                                  colour = final_2022$cluster)) +
+  geom_point()+ theme_bw()
+ggplotly(p)
+
+
+p2<-cluster_testing_2023 %>%
+  ggplot(data = cluster_testing_2023, 
+             mapping = aes(x = cluster_testing_2023$`Sum Klaim`, 
+                                  y = cluster_testing_2023$`Rasio Polis/Klaim`, 
+                                  colour = final_2023$cluster)) +
+  geom_point()+ theme_bw()
+ggplotly(p2)
+```
+
+
+```{r}
+cluster_testing_2022 %>%
+  mutate(Cluster = final_2022$cluster) %>%
+  group_by(Cluster) %>%
+  summarise_all("mean")
+```
+
+```{r}
+getwd()
+```
+
+```{r}
+data_cluster_2022 <- cbind(total_klaim_2022$Group.1,cluster_testing_2022, final_2022$cluster,"2022")
+data_cluster_2023 <- cbind(total_klaim_2023$Group.1,cluster_testing_2023, final_2023$cluster,"2023")
+colnames(data_cluster_2022) <- c('Nama Perusahaan','Total Klaim', 'Polis','Rasio', 'Kluster','Periode Awal')
+colnames(data_cluster_2023) <- c('Nama Perusahaan','Total Klaim', 'Polis','Rasio', 'Kluster','Periode Awal')
+data_cluster_all <- rbind(data_cluster_2022,data_cluster_2023)
+write.csv(data_cluster_all, "C:/Users/Christian Sirait/Desktop/kuli dan yeah/Kerja Sukarela/Proyek Klaim Asuransi Kesehatan/Analisa Kluster/datatest_all.csv", row.names=FALSE)
+
+```
+
